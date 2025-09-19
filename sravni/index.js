@@ -10,6 +10,61 @@ chromeOptions.addArguments('--no-sandbox');
 chromeOptions.addArguments('--disable-dev-shm-usage');
 chromeOptions.addArguments('--window-size=1920,1080');
 
+// Максимальная блокировка редиректов
+chromeOptions.addArguments('--disable-web-security');
+chromeOptions.addArguments('--disable-features=VizDisplayCompositor');
+
+// Блокировка HTTP редиректов и переадресаций
+chromeOptions.addArguments('--disable-background-networking');
+chromeOptions.addArguments('--disable-background-timer-throttling');
+chromeOptions.addArguments('--disable-renderer-backgrounding');
+chromeOptions.addArguments('--disable-backgrounding-occluded-windows');
+chromeOptions.addArguments('--disable-client-side-phishing-detection');
+chromeOptions.addArguments('--disable-sync');
+
+// Блокировка автоматических навигационных переходов
+chromeOptions.addArguments('--disable-background-mode');
+chromeOptions.addArguments('--disable-default-apps');
+chromeOptions.addArguments('--disable-extensions');
+chromeOptions.addArguments('--disable-plugins');
+chromeOptions.addArguments('--disable-popup-blocking');
+
+// Сетевые ограничения для блокировки редиректов
+chromeOptions.addArguments('--disable-domain-reliability');
+chromeOptions.addArguments('--disable-component-update');
+chromeOptions.addArguments('--disable-background-downloads');
+chromeOptions.addArguments('--disable-add-to-shelf');
+chromeOptions.addArguments('--disable-translate');
+
+// Безопасность и приватность (помогает блокировать редиректы)
+chromeOptions.addArguments('--disable-features=TranslateUI');
+chromeOptions.addArguments('--disable-ipc-flooding-protection');
+chromeOptions.addArguments('--disable-hang-monitor');
+chromeOptions.addArguments('--disable-prompt-on-repost');
+chromeOptions.addArguments('--disable-site-isolation-trials');
+
+// Блокировка автоматических действий браузера
+chromeOptions.addArguments('--no-first-run');
+chromeOptions.addArguments('--no-default-browser-check');
+chromeOptions.addArguments('--disable-infobars');
+chromeOptions.addArguments('--disable-notifications');
+chromeOptions.addArguments('--disable-save-password-bubble');
+
+// Настройки для предотвращения автоматических переходов
+chromeOptions.addArguments('--disable-features=AutofillServerCommunication');
+chromeOptions.addArguments('--disable-features=Translate');
+chromeOptions.addArguments('--disable-features=OptimizationHints');
+chromeOptions.addArguments('--disable-features=MediaRouter');
+chromeOptions.addArguments('--disable-features=DialMediaRouteProvider');
+
+// Дополнительные настройки безопасности
+chromeOptions.addArguments('--disable-blink-features=AutomationControlled');
+chromeOptions.addArguments('--disable-dev-tools');
+chromeOptions.addArguments('--disable-gpu-sandbox');
+chromeOptions.addArguments('--ignore-certificate-errors');
+chromeOptions.addArguments('--ignore-ssl-errors');
+chromeOptions.addArguments('--allow-running-insecure-content');
+
 // Маппинг русских месяцев в числа
 const monthMap = {
     'января': '01', 'февраля': '02', 'марта': '03', 'апреля': '04',
@@ -160,7 +215,7 @@ async function parseReview(driver, reviewElement) {
         try {
             const readButton = await reviewElement.findElement(By.css('a._i91ye._qagut5'));
             await driver.executeScript("arguments[0].click();", readButton);
-            await driver.sleep(1000); // Даем время на загрузку полного текста
+            await driver.sleep(300); // Сократили задержку для быстрого парсинга загруженного контента
         } catch (e) {
             console.log('Кнопка "Читать" не найдена или уже развернут текст для отзыва', reviewId);
         }
@@ -217,6 +272,83 @@ async function parseSravniGazprombank() {
 
         console.log('📄 Страница загружена успешно');
 
+        // Блокируем все редиректы на уровне JavaScript
+        await driver.executeScript(`
+            // Сохраняем оригинальные методы
+            const originalAssign = window.location.assign;
+            const originalReplace = window.location.replace;
+            const originalReload = window.location.reload;
+            const originalPushState = history.pushState;
+            const originalReplaceState = history.replaceState;
+
+            // Блокируем location.assign
+            window.location.assign = function(url) {
+                console.log('🚫 Заблокирован location.assign на:', url);
+                return false;
+            };
+
+            // Блокируем location.replace
+            window.location.replace = function(url) {
+                console.log('🚫 Заблокирован location.replace на:', url);
+                return false;
+            };
+
+            // Блокируем location.reload
+            window.location.reload = function() {
+                console.log('🚫 Заблокирована перезагрузка страницы');
+                return false;
+            };
+
+            // Блокируем history.pushState и replaceState
+            history.pushState = function(state, title, url) {
+                console.log('🚫 Заблокирован history.pushState на:', url);
+                return false;
+            };
+            
+            history.replaceState = function(state, title, url) {
+                console.log('🚫 Заблокирован history.replaceState на:', url);
+                return false;
+            };
+
+            // Блокируем все формы с action
+            document.addEventListener('submit', function(e) {
+                console.log('🚫 Заблокирована отправка формы');
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            }, true);
+
+            // Блокируем клики по ссылкам с href (кроме нужных нам)
+            document.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A' && e.target.href && !e.target.href.startsWith('#')) {
+                    const href = e.target.href;
+                    // Разрешаем только ссылки на отзывы и саму страницу отзывов
+                    if (!href.includes('sravni.ru/bank/gazprombank/otzyv') && !href.includes('javascript:') && href !== window.location.href) {
+                        console.log('🚫 Заблокирован переход по ссылке:', href);
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return false;
+                    }
+                }
+            }, true);
+
+            // Блокируем изменение window.location через перехват
+            let blocked = false;
+            const locationWatcher = setInterval(() => {
+                if (window.location.href !== '${url}' && !blocked) {
+                    blocked = true;
+                    console.log('🚫 Обнаружена попытка редиректа, блокируем...');
+                    window.history.back();
+                    setTimeout(() => { blocked = false; }, 1000);
+                }
+            }, 100);
+
+            window.blockRedirectsActive = true;
+            console.log('✅ Все редиректы заблокированы на уровне JavaScript');
+        `);
+
+        console.log('🚫 JavaScript блокировка редиректов активирована');
+
         // Получаем заголовок страницы для проверки
         const title = await driver.getTitle();
         console.log(`📝 Заголовок страницы: ${title}`);
@@ -243,7 +375,7 @@ async function parseSravniGazprombank() {
         console.log(`📋 Найдено отзывов: ${reviewElements.length}`);
 
         // Парсим до 50 отзывов с динамической подгрузкой
-        const targetReviews = 500;
+        const targetReviews = 1000;
         const reviews = [];
         let parsedIds = new Set(); // Для избежания дубликатов
         let reviewQueue = []; // Очередь отзывов для обработки
@@ -398,8 +530,8 @@ async function parseSravniGazprombank() {
                 console.log(`   🔗 Ссылка: ${review.link}`);
                 console.log(`   📄 Контент: ${review.content.substring(0, 100)}...`);
 
-                // Ждем немного для подгрузки новых отзывов
-                await driver.sleep(1500);
+                // Минимальная задержка для уже загруженных отзывов
+                await driver.sleep(200);
 
                 // ОБЯЗАТЕЛЬНО пересканируем страницу в поисках новых отзывов после каждого спарсенного отзыва
                 console.log(`🔄 Пересканируем страницу после парсинга отзыва ${review.id}...`);
@@ -415,8 +547,8 @@ async function parseSravniGazprombank() {
                 console.warn(`❌ Не удалось спарсить отзыв ${currentReviewId}`);
             }
 
-            // Небольшая пауза между парсингом отзывов
-            await driver.sleep(500);
+            // Минимальная пауза между парсингом отзывов для ускорения
+            await driver.sleep(100);
 
             // Если очередь пуста, но цель не достигнута, просто ждем и пересканируем
             if (reviewQueue.length === 0 && reviews.length < targetReviews) {
