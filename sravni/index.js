@@ -206,8 +206,8 @@ async function parseSravniGazprombank() {
 
         console.log('✅ Chrome драйвер запущен');
 
-        // Переходим на страницу отзывов Газпромбанка
-        const url = 'https://www.sravni.ru/bank/gazprombank/otzyvy/';
+        // Переходим на страницу отзывов Газпромбанка (сортировка по дате для свежих отзывов)
+        const url = 'https://www.sravni.ru/bank/gazprombank/otzyvy/?orderby=byDate';
         console.log(`🔗 Переходим на: ${url}`);
 
         await driver.get(url);
@@ -243,7 +243,7 @@ async function parseSravniGazprombank() {
         console.log(`📋 Найдено отзывов: ${reviewElements.length}`);
 
         // Парсим до 50 отзывов с динамической подгрузкой
-        const targetReviews = 200;
+        const targetReviews = 500;
         const reviews = [];
         let parsedIds = new Set(); // Для избежания дубликатов
         let reviewQueue = []; // Очередь отзывов для обработки
@@ -254,6 +254,12 @@ async function parseSravniGazprombank() {
         let keepScrolling = true;
         const startBackgroundScroll = async () => {
             while (keepScrolling) {
+                // Останавливаем скролл если в очереди достаточно отзывов для достижения цели
+                if (reviewQueue.length + reviews.length >= targetReviews) {
+                    console.log(`🛑 Достаточно отзывов в очереди (${reviewQueue.length}) + обработано (${reviews.length}) = ${reviewQueue.length + reviews.length}. Останавливаем скролл.`);
+                    break;
+                }
+
                 if (reviewQueue.length > 0) {
                     // Скроллим к последнему отзыву в очереди как к якорю
                     const lastReviewId = reviewQueue[reviewQueue.length - 1];
@@ -290,6 +296,12 @@ async function parseSravniGazprombank() {
 
             // Проходим по всем найденным отзывам и добавляем необработанные в очередь
             for (let reviewElement of currentReviewElements) {
+                // Останавливаем добавление если достигли целевого количества
+                if (reviewQueue.length + reviews.length >= targetReviews) {
+                    console.log(`🎯 Достигнута цель: в очереди (${reviewQueue.length}) + обработано (${reviews.length}) = ${reviewQueue.length + reviews.length} отзывов`);
+                    break;
+                }
+
                 try {
                     const reviewId = await reviewElement.getAttribute('data-id');
 
