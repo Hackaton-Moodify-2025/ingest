@@ -61,6 +61,7 @@ async function parsePageData(driver, url) {
 
         let product = null;
         let city = null;
+        let status = null; // Добавляем переменную для статуса проблемы
 
         // Поиск продукта по классу h-color-D30 h-mr-16 _1w66l1f
         try {
@@ -81,41 +82,52 @@ async function parsePageData(driver, url) {
             }
         }
 
-        // Поиск города по классу _1vfu01w _1mxed63 _8km2y3
+        // Поиск статуса проблемы и города по классу _1vfu01w _1mxed63 _8km2y3
         try {
-            // Ждем появления элементов города
+            // Ждем появления элементов
             await driver.wait(until.elementsLocated(By.css('._1vfu01w._1mxed63._8km2y3')), 3000);
-            const cityElements = await driver.findElements(By.css('._1vfu01w._1mxed63._8km2y3'));
-            if (cityElements.length >= 2) {
-                // Берем второй элемент (индекс 1)
-                city = await cityElements[1].getText();
+            const statusElements = await driver.findElements(By.css('._1vfu01w._1mxed63._8km2y3'));
+
+            if (statusElements.length >= 1) {
+                // Первый элемент - статус проблемы
+                status = await statusElements[0].getText();
+                status = status.trim();
+            }
+
+            if (statusElements.length >= 2) {
+                // Второй элемент - город
+                city = await statusElements[1].getText();
                 city = city.trim();
-            } else if (cityElements.length === 1) {
-                // Если есть только один элемент, берем его
-                city = await cityElements[0].getText();
-                city = city.trim();
+            } else if (statusElements.length === 1) {
+                // Если есть только один элемент, пробуем найти альтернативно город
+                console.log('    ⚠️  Найден только статус, ищем город альтернативно');
             }
         } catch (e) {
             // Пробуем найти альтернативными селекторами
             try {
                 await driver.wait(until.elementsLocated(By.css('[class*="_1vfu01w"]')), 2000);
-                const cityElements = await driver.findElements(By.css('[class*="_1vfu01w"]'));
-                if (cityElements.length >= 2) {
-                    city = await cityElements[1].getText();
+                const statusElements = await driver.findElements(By.css('[class*="_1vfu01w"]'));
+
+                if (statusElements.length >= 1) {
+                    status = await statusElements[0].getText();
+                    status = status.trim();
+                }
+
+                if (statusElements.length >= 2) {
+                    city = await statusElements[1].getText();
                     city = city.trim();
-                } else if (cityElements.length === 1) {
-                    city = await cityElements[0].getText();
-                    city = city.trim();
+                } else if (statusElements.length === 1) {
+                    console.log('    ⚠️  Найден только статус альтернативно');
                 }
             } catch (e2) {
-                console.log('    ⚠️  Город не найден');
+                console.log('    ⚠️  Статус и город не найдены');
             }
         }
 
-        return { product, city };
+        return { product, city, status };
     } catch (error) {
         console.error('❌ Ошибка при парсинге страницы:', error.message);
-        return { product: null, city: null };
+        return { product: null, city: null, status: null };
     }
 }
 
@@ -124,23 +136,26 @@ async function processReview(driver, review, index) {
     try {
         console.log(`\n🔍 Обрабатываем отзыв ${index + 1}: ${review.id}`);
 
-        const { product, city } = await parsePageData(driver, review.link);
+        const { product, city, status } = await parsePageData(driver, review.link);
 
         console.log(`  📦 Продукт: ${product || 'не найден'}`);
         console.log(`  🏙️  Город: ${city || 'не найден'}`);
+        console.log(`  📋 Статус: ${status || 'не найден'}`);
 
         // Возвращаем дополненный отзыв
         return {
             ...review,
             product: product,
-            city: city
+            city: city,
+            status: status
         };
     } catch (error) {
         console.error(`❌ Ошибка при обработке отзыва ${review.id}:`, error.message);
         return {
             ...review,
             product: null,
-            city: null
+            city: null,
+            status: null
         };
     }
 }
