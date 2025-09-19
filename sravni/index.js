@@ -243,109 +243,188 @@ async function parseSravniGazprombank() {
         console.log(`📋 Найдено отзывов: ${reviewElements.length}`);
 
         // Парсим до 50 отзывов с динамической подгрузкой
-        const targetReviews = 50;
+        const targetReviews = 200;
         const reviews = [];
         let parsedIds = new Set(); // Для избежания дубликатов
+        let reviewQueue = []; // Очередь отзывов для обработки
 
         console.log(`🎯 Цель: спарсить ${targetReviews} отзывов`);
 
-        while (reviews.length < targetReviews) {
-            // Ищем все отзывы на текущей странице
-            const reviewElements = await driver.findElements(By.css('.page_mainColumn__oogxd .styles_wrapper___EM4q div[data-id]'));
-
-            console.log(`📋 Найдено отзывов на странице: ${reviewElements.length}`);
-            console.log(`📊 Уже спарсено: ${reviews.length} из ${targetReviews}`);
-
-            // Парсим новые отзывы
-            let newReviewsCount = 0;
-            for (let i = 0; i < reviewElements.length && reviews.length < targetReviews; i++) {
-                const reviewId = await reviewElements[i].getAttribute('data-id');
-
-                // Проверяем, не парсили ли мы уже этот отзыв
-                if (parsedIds.has(reviewId)) {
-                    continue;
-                }
-
-                console.log(`📝 Парсим отзыв ${reviews.length + 1} из ${targetReviews} (ID: ${reviewId})...`);
-
-                const review = await parseReview(driver, reviewElements[i]);
-                if (review) {
-                    reviews.push(review);
-                    parsedIds.add(reviewId);
-                    newReviewsCount++;
-
-                    console.log(`✅ Отзыв ${review.id} успешно спарсен`);
-                    console.log(`   📅 Дата: ${review.date}`);
-                    console.log(`   ⭐ Рейтинг: ${review.rating}/5`);
-                    console.log(`   🔗 Ссылка: ${review.link}`);
-                    console.log(`   📄 Контент: ${review.content.substring(0, 100)}...`);
-
-                    // Скроллим на 300 пикселей вниз после каждого спарсенного отзыва
-                    const currentScrollY = await driver.executeScript("return window.pageYOffset;");
-                    const newScrollY = currentScrollY + 300;
-                    await driver.executeScript(`window.scrollTo(0, ${newScrollY});`);
-                    console.log(`   📍 Скролл: ${currentScrollY}px → ${newScrollY}px`);
-
-                    // Ждем немного для подгрузки новых отзывов
-                    await driver.sleep(1000);
-                    console.log('');
-                } else {
-                    console.warn(`❌ Не удалось спарсить отзыв ${reviewId}`);
-                }
-
-                // Небольшая пауза между парсингом отзывов
-                await driver.sleep(500);
-            }
-
-            // Если достигли цели, выходим
-            if (reviews.length >= targetReviews) {
-                console.log(`🎉 Достигнута цель: спарсено ${reviews.length} отзывов!`);
-                break;
-            }
-
-            // Если новых отзывов не появилось, нужно скроллить
-            if (newReviewsCount === 0) {
-                console.log(`⬇️ Скроллим вниз для загрузки новых отзывов...`);
-
-                // Получаем текущую позицию скролла
-                const currentScrollY = await driver.executeScript("return window.pageYOffset;");
-                console.log(`📍 Текущая позиция скролла: ${currentScrollY}px`);
-
-                // Плавно скроллим на 300 пикселей вниз
-                const newScrollY = currentScrollY + 300;
-                await driver.executeScript(`window.scrollTo(0, ${newScrollY});`);
-                console.log(`📍 Новая позиция скролла: ${newScrollY}px`);
-
-                // Ждем загрузки новых отзывов
-                await driver.sleep(2000);
-
-                // Проверяем, появились ли новые отзывы
-                const newReviewElements = await driver.findElements(By.css('.page_mainColumn__oogxd .styles_wrapper___EM4q div[data-id]'));
-
-                if (newReviewElements.length === reviewElements.length) {
-                    console.log(`⚠️ Новые отзывы не загрузились после скролла на 300px`);
-
-                    // Попробуем еще раз скроллить немного больше
-                    const finalScrollY = newScrollY + 500;
-                    await driver.executeScript(`window.scrollTo(0, ${finalScrollY});`);
-                    console.log(`📍 Финальный скролл до: ${finalScrollY}px`);
-                    await driver.sleep(3000);
-
-                    // Последняя проверка
-                    const finalReviewElements = await driver.findElements(By.css('.page_mainColumn__oogxd .styles_wrapper___EM4q div[data-id]'));
-
-                    if (finalReviewElements.length === reviewElements.length) {
-                        console.log(`⚠️ Новые отзывы так и не загрузились. Возможно, это все доступные отзывы.`);
-                        console.log(`📊 Итого спарсено: ${reviews.length} отзывов`);
-                        break;
-                    } else {
-                        console.log(`📈 Загружено новых отзывов после дополнительного скролла: ${finalReviewElements.length - reviewElements.length}`);
+        // Фоновый скролл к последнему отзыву в очереди
+        let keepScrolling = true;
+        const startBackgroundScroll = async () => {
+            while (keepScrolling) {
+                if (reviewQueue.length > 0) {
+                    // Скроллим к последнему отзыву в очереди как к якорю
+                    const lastReviewId = reviewQueue[reviewQueue.length - 1];
+                    try {
+                        const lastElement = await driver.findElement(By.css(`div[data-id="${lastReviewId}"]`));
+                        await driver.executeScript("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", lastElement);
+                        console.log(`🎯 Скроллим к якорю - последнему отзыву в очереди: ${lastReviewId}`);
+                    } catch (e) {
+                        // Если элемент не найден, делаем обычный скролл
+                        await driver.executeScript('window.scrollBy(0, 300);');
                     }
                 } else {
-                    console.log(`📈 Загружено новых отзывов: ${newReviewElements.length - reviewElements.length}`);
+                    // Если очередь пуста, продолжаем скроллить вниз для поиска новых отзывов
+                    await driver.executeScript('window.scrollBy(0, 300);');
+                }
+                await driver.sleep(2000); // Скроллим каждые 2 секунды
+            }
+        };
+
+        // Функция для пересканирования страницы и полного обновления очереди
+        const updateReviewQueue = async () => {
+            console.log(`🔍 Пересканируем страницу для поиска новых отзывов...`);
+
+            // Получаем все текущие элементы отзывов на странице
+            const currentReviewElements = await driver.findElements(By.css('.page_mainColumn__oogxd .styles_wrapper___EM4q div[data-id]'));
+
+            console.log(`� Найдено ${currentReviewElements.length} отзывов на странице`);
+
+            // Очищаем старую очередь (элементы могли устареть после скролла)
+            reviewQueue = [];
+
+            let newReviewsFound = 0;
+            let duplicatesSkipped = 0;
+
+            // Проходим по всем найденным отзывам и добавляем необработанные в очередь
+            for (let reviewElement of currentReviewElements) {
+                try {
+                    const reviewId = await reviewElement.getAttribute('data-id');
+
+                    // Проверяем, что отзыв еще не был обработан
+                    if (parsedIds.has(reviewId)) {
+                        duplicatesSkipped++;
+                        continue;
+                    }
+
+                    // Добавляем только ID отзыва в очередь (НЕ сам элемент!)
+                    reviewQueue.push(reviewId);
+                    newReviewsFound++;
+
+                } catch (e) {
+                    console.warn(`⚠️ Не удалось получить ID отзыва:`, e.message);
                 }
             }
-        }        // Выводим результаты
+
+            console.log(`📈 Добавлено в очередь: ${newReviewsFound} новых отзывов`);
+
+            if (duplicatesSkipped > 0) {
+                console.log(`⚠️ Пропущено ${duplicatesSkipped} уже обработанных отзывов`);
+            }
+
+            console.log(`📊 Текущая очередь: ${reviewQueue.length} отзывов`);
+            console.log(`📊 Уже обработано: ${parsedIds.size} отзывов`);
+            console.log(`📊 Всего на странице: ${currentReviewElements.length} отзывов`);
+
+            if (newReviewsFound > 0) {
+                console.log(`🆔 Новые ID в очереди:`, reviewQueue.slice(0, 3), reviewQueue.length > 3 ? `... и еще ${reviewQueue.length - 3}` : '');
+            }
+
+            return newReviewsFound;
+        };        // Начальное сканирование
+        console.log(`\n🔍 Выполняем начальное сканирование страницы...`);
+        const initialNewReviews = await updateReviewQueue();
+        console.log(`📋 Начальная очередь: ${reviewQueue.length} отзывов`);
+
+        if (reviewQueue.length === 0) {
+            console.log(`❌ ОШИБКА: Не найдено ни одного отзыва для парсинга!`);
+            console.log(`🔍 Проверьте селекторы или структуру страницы.`);
+            return;
+        }
+
+        // Функция для проверки уникальности отзывов в финальном списке
+        const validateUniqueReviews = (reviewsList) => {
+            const seenIds = new Set();
+            const duplicates = [];
+
+            for (let review of reviewsList) {
+                if (seenIds.has(review.id)) {
+                    duplicates.push(review.id);
+                } else {
+                    seenIds.add(review.id);
+                }
+            }
+
+            if (duplicates.length > 0) {
+                console.warn(`⚠️ Обнаружены дубликаты в финальном списке: ${duplicates.join(', ')}`);
+                return false;
+            } else {
+                console.log(`✅ Проверка уникальности пройдена: все ${reviewsList.length} отзывов уникальны`);
+                return true;
+            }
+        };
+
+        // Запускаем фоновый плавный скролл
+        const scrollPromise = startBackgroundScroll();
+
+        while (reviews.length < targetReviews && reviewQueue.length > 0) {
+            // Берем первый ID отзыва из очереди
+            const currentReviewId = reviewQueue.shift();
+
+            console.log(`\n📝 Парсим отзыв ${reviews.length + 1} из ${targetReviews} (ID: ${currentReviewId})...`);
+            console.log(`📊 Осталось в очереди: ${reviewQueue.length} отзывов`);
+
+            // Находим элемент по ID заново (чтобы избежать stale element)
+            let currentReviewElement;
+            try {
+                currentReviewElement = await driver.findElement(By.css(`div[data-id="${currentReviewId}"]`));
+            } catch (e) {
+                console.warn(`❌ Не удалось найти элемент отзыва с ID ${currentReviewId}, возможно элемент устарел`);
+                continue;
+            }
+
+            const review = await parseReview(driver, currentReviewElement);
+            if (review) {
+                reviews.push(review);
+                parsedIds.add(currentReviewId);
+
+                console.log(`✅ Отзыв ${review.id} успешно спарсен`);
+                console.log(`   📅 Дата: ${review.date}`);
+                console.log(`   ⭐ Рейтинг: ${review.rating}/5`);
+                console.log(`   🔗 Ссылка: ${review.link}`);
+                console.log(`   📄 Контент: ${review.content.substring(0, 100)}...`);
+
+                // Ждем немного для подгрузки новых отзывов
+                await driver.sleep(1500);
+
+                // ОБЯЗАТЕЛЬНО пересканируем страницу в поисках новых отзывов после каждого спарсенного отзыва
+                console.log(`🔄 Пересканируем страницу после парсинга отзыва ${review.id}...`);
+                const foundNewReviews = await updateReviewQueue();
+
+                if (foundNewReviews > 0) {
+                    console.log(`🎉 Отлично! После скролла найдено ${foundNewReviews} новых отзывов!`);
+                } else {
+                    console.log(`ℹ️ Новых отзывов после скролла не найдено`);
+                }
+
+            } else {
+                console.warn(`❌ Не удалось спарсить отзыв ${currentReviewId}`);
+            }
+
+            // Небольшая пауза между парсингом отзывов
+            await driver.sleep(500);
+
+            // Если очередь пуста, но цель не достигнута, просто ждем и пересканируем
+            if (reviewQueue.length === 0 && reviews.length < targetReviews) {
+                console.log(`\n⬇️ Очередь пуста, ждем 5 секунд и пересканируем страницу...`);
+                await driver.sleep(5000);
+                const newReviewsFound = await updateReviewQueue();
+                if (reviewQueue.length === 0) {
+                    console.log(`\n🏁 Больше отзывов не найдено. Возможно, это все доступные отзывы. Итого спарсено: ${reviews.length} отзывов`);
+                    break;
+                }
+            }
+        }
+
+        // Останавливаем фоновый скролл
+        keepScrolling = false;
+        await scrollPromise;
+        console.log('🔍 Выполняем финальную проверку на дубликаты...');
+        validateUniqueReviews(reviews);
+
+        // Выводим результаты
         console.log('🎯 РЕЗУЛЬТАТЫ ПАРСИНГА:');
         console.log('========================');
         reviews.forEach((review, index) => {
