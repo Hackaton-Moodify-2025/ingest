@@ -2,22 +2,22 @@ const fs = require('fs');
 
 function transformData() {
     console.log('Начинаем преобразование dataset.json...');
-    
+
     // Читаем исходный файл
     const rawData = fs.readFileSync('dataset.json', 'utf8');
     const dataset = JSON.parse(rawData);
-    
+
     console.log(`Найдено ${dataset.length} записей для обработки`);
-    
+
     const transformedData = dataset.map((item, index) => {
         // Извлекаем title и text из content
         let title = '';
         let text = '';
-        
+
         if (item.content) {
             // Ищем первые два переноса строки
             const doubleNewlineIndex = item.content.indexOf('\n\n');
-            
+
             if (doubleNewlineIndex !== -1) {
                 // Если нашли двойной перенос, берем все до него как title
                 title = item.content.substring(0, doubleNewlineIndex).trim();
@@ -36,7 +36,7 @@ function transformData() {
                 }
             }
         }
-        
+
         // Преобразуем статус
         let status = '';
         if (item.status === 'ПРОВЕРЕН') {
@@ -46,7 +46,7 @@ function transformData() {
         } else {
             status = item.status ? item.status.toLowerCase() : '';
         }
-        
+
         // Создаем новый объект с нужным порядком полей
         const transformedItem = {
             id: parseInt(item.id), // Преобразуем в число
@@ -55,29 +55,31 @@ function transformData() {
             title: title,
             text: text,
             rating: item.rating ? item.rating.toString() : '', // Преобразуем в строку
-            status: status,
-            city: item.city || ''
+            status: status
         };
-        
-        // Добавляем product только если он есть
+
+        // Добавляем product только если он есть (перед city)
         if (item.product) {
             transformedItem.product = item.product;
         }
-        
+
+        // Добавляем city в конце
+        transformedItem.city = item.city || '';
+
         // Логируем прогресс каждые 1000 записей
         if ((index + 1) % 1000 === 0) {
             console.log(`Обработано ${index + 1} записей...`);
         }
-        
+
         return transformedItem;
     });
-    
+
     // Записываем результат в новый файл
     fs.writeFileSync('data.json', JSON.stringify(transformedData, null, 2), 'utf8');
-    
+
     console.log(`✅ Преобразование завершено! Создан файл data.json с ${transformedData.length} записями`);
     console.log('📊 Примеры преобразованных записей:');
-    
+
     // Показываем несколько примеров
     for (let i = 0; i < Math.min(3, transformedData.length); i++) {
         console.log(`\nПример ${i + 1}:`);
