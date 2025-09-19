@@ -13,7 +13,7 @@ let totalReviews = reviews.length;
 
 reviews.forEach(review => {
     const reviewDate = new Date(review.date);
-    
+
     if (reviewDate >= startDate && reviewDate <= endDate) {
         count++;
     }
