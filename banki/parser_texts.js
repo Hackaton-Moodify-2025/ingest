@@ -4,8 +4,8 @@ const puppeteer = require("puppeteer");
 const LINKS_FILE = "links.json";
 const OUTPUT_FILE = "reviews.json";
 const CHECKPOINT_FILE = "checkpoint_texts.json";
-const SAVE_EVERY = 5;
-const START_INDEX = 1322;
+const SAVE_EVERY = 10;
+const START_INDEX = 0;
 
 const DATE_FROM = new Date("2024-01-01");
 const DATE_TO = new Date("2025-05-31");
@@ -53,7 +53,7 @@ function parseDate(str) {
     const sub = await browser.newPage();
     try {
       await sub.goto(r.link, { waitUntil: "domcontentloaded", timeout: 0 });
-      await delay(1500);
+      await delay(2500);
       await sub.waitForSelector("h1, [data-test='response-body']", { timeout: 15000 }).catch(() => null);
 
       let got = { title: null, text: null, rating: null, date: null };
@@ -144,6 +144,15 @@ function parseDate(str) {
           .catch(() => null);
       }
 
+      let city = null;
+      try {
+        city = await sub.$eval(".l3a372298", (el) => el.textContent.trim());
+        if (city) {
+          // убираем всё в скобках, оставляем только название города
+          city = city.replace(/\s*\(.*?\)\s*$/, "").trim();
+        }
+      } catch {}
+
       // === Дата ===
       let date = null;
       const dateRaw =
@@ -176,6 +185,7 @@ function parseDate(str) {
         title: got.title || r.title,
         text: got.text,
         rating: got.rating,
+        city: city,
       });
       doneIds.add(r.id);
 
@@ -196,7 +206,7 @@ function parseDate(str) {
       } catch (e) {
         console.log(`⚠️ Ошибка при закрытии вкладки (id=${r.id}): ${e.message}`);
       }
-      await delay(800);
+      await delay(1000);
     }
   }
 
