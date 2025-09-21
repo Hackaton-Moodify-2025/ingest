@@ -53,7 +53,7 @@ async function gracefulShutdown(signal) {
         // Сохраняем все текущие данные
         if (allReviews.length > 0) {
             console.log('💾 Сохраняем собранные данные...');
-            await saveReviewsToFile(allReviews, 'otzovik_reviews_emergency.json');
+            await saveReviewsToFile(allReviews, 'otzovik_reviews_filtered_emergency.json');
             console.log(`✅ Данные сохранены! Всего отзывов: ${allReviews.length}`);
         }
 
@@ -77,6 +77,20 @@ async function gracefulShutdown(signal) {
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));   // Ctrl+C
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM')); // Termination signal
 process.on('SIGHUP', () => gracefulShutdown('SIGHUP'));   // Hang up signal
+
+// Функция для проверки даты в нужном диапазоне (01.01.2024 - 31.05.2025)
+function isDateInRange(dateString) {
+    try {
+        const reviewDate = new Date(dateString);
+        const startDate = new Date('2024-01-01');
+        const endDate = new Date('2025-05-31');
+        
+        return reviewDate >= startDate && reviewDate <= endDate;
+    } catch (error) {
+        console.warn('Ошибка при парсинге даты:', dateString);
+        return false;
+    }
+}
 
 // Функция для сохранения отзывов в JSON файл
 async function saveReviewsToFile(reviews, filename = 'otzovik_reviews.json') {
@@ -106,9 +120,27 @@ async function parseReview(reviewElement) {
         const reviewId = parseInt(idMatch[1]);
         const reviewLink = reviewUrl;
 
+        // Извлекаем дату публикации из атрибута content
+        let reviewDate = null;
+        try {
+            const dateElement = await reviewElement.findElement(By.css('.review-postdate[itemprop="datePublished"]'));
+            reviewDate = await dateElement.getAttribute('content');
+        } catch (e) {
+            console.warn(`Не удалось извлечь дату для отзыва ${reviewId}`);
+            return null; // Если нет даты, пропускаем отзыв
+        }
+
+        // Проверяем, попадает ли дата в нужный диапазон (01.01.2024 - 31.05.2025)
+        if (!isDateInRange(reviewDate)) {
+            console.log(`   📅 Отзыв ${reviewId} (${reviewDate}) не в диапазоне дат - пропускаем`);
+            return null;
+        }
+
+        console.log(`   ✅ Отзыв ${reviewId} (${reviewDate}) в диапазоне дат - добавляем`);
         return {
             id: reviewId,
-            link: reviewLink
+            link: reviewLink,
+            date: reviewDate
         };
 
     } catch (error) {
@@ -228,7 +260,7 @@ async function parsePage(driverInstance, pageNum) {
 // Главная функция парсера
 async function parseOtzovikGazprombank() {
     try {
-        console.log('🚀 Запуск парсера Otzovik.com для Газпромбанка...');
+        console.log('🚀 Запуск парсера Otzovik.com для Газпромбанка (отзывы 01.01.2024 - 31.05.2025)...');
         console.log('💡 Для остановки используйте Ctrl+C (данные будут сохранены)');
 
         // Создание драйвера Chrome
@@ -259,7 +291,7 @@ async function parseOtzovikGazprombank() {
                 // Сохраняем промежуточные результаты каждые 10 страниц
                 if (pageNum % 10 === 0) {
                     console.log(`💾 Промежуточное сохранение после ${pageNum} страниц...`);
-                    await saveReviewsToFile(allReviews, `otzovik_reviews_page_${pageNum}.json`);
+                    await saveReviewsToFile(allReviews, `otzovik_reviews_filtered_page_${pageNum}.json`);
                 }
 
             } catch (error) {
@@ -273,7 +305,7 @@ async function parseOtzovikGazprombank() {
             console.log(`📊 Общее количество найденных отзывов: ${allReviews.length}`);
 
             // Сохраняем финальный результат
-            await saveReviewsToFile(allReviews);
+            await saveReviewsToFile(allReviews, 'otzovik_reviews_filtered_2024-2025.json');
         }
 
         return allReviews;
