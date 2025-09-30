@@ -67,4 +67,5 @@ downloads/
 
 # Parser output files
 reviews.json
-*.json
+otzovik_reviews*.json
+otzovik_detailed_reviews*.json
