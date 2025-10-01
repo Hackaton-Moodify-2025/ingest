@@ -45,7 +45,8 @@
    ```bash
    cd banki
    npm install
-   npm start
+   node parser_links.js
+   node parser_texts.js
    ```
 
 3. После завершения парсинга данные будут сохранены в `reviews.json`.
